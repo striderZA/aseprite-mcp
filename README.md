@@ -2,10 +2,6 @@
 
 A Python module that serves as an MCP server for interacting with the Aseprite API
 
-Demo where Cursor draws a cloud in aseprite using the MCP:
-
-https://github.com/user-attachments/assets/572edf75-ab66-4700-87ee-d7d3d196c597
-
 ## Installation
 
 ### Prerequisites
@@ -13,19 +9,41 @@ https://github.com/user-attachments/assets/572edf75-ab66-4700-87ee-d7d3d196c597
 - `uv` package manager
 
 ### Installation:
+
+Requires [Aseprite](https://www.aseprite.org) installed with `ASEPRITE_PATH` pointing to the binary.
+
+**macOS:**
 ```json
 {
   "mcpServers": {
-      "aseprite": {
-          "command": "/opt/homebrew/bin/uv",
-          "args": [
-              "--directory",
-              "/path/to/repo",
-              "run",
-              "-m",
-              "aseprite_mcp"
-          ]
-      }
+    "aseprite": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["--directory", "/path/to/repo", "run", "-m", "aseprite_mcp"]
+    }
+  }
+}
+```
+
+**Windows:**
+```json
+{
+  "mcpServers": {
+    "aseprite": {
+      "command": "uv",
+      "args": ["--directory", "C:\\path\\to\\repo", "run", "-m", "aseprite_mcp"]
+    }
+  }
+}
+```
+
+**Linux:**
+```json
+{
+  "mcpServers": {
+    "aseprite": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/repo", "run", "-m", "aseprite_mcp"]
+    }
   }
 }
 ```
