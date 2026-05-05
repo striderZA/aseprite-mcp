@@ -9,3 +9,6 @@ from . import guide
 from . import quality
 from . import pixel_read
 from . import transform
+from . import slice
+from . import tileset
+from . import app
