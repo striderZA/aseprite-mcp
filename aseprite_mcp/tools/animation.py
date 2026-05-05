@@ -750,6 +750,9 @@ async def propagate_frame_to_range(
         )
     return f"Failed to propagate frame range: {output}"
 
+_TAG_DIRECTIONS = {"forward": 0, "reverse": 1, "ping_pong": 2}
+
+
 @mcp.tool()
 async def set_tag(
     filename: str,
@@ -758,9 +761,21 @@ async def set_tag(
     to_frame: int,
     direction: str = "forward"
 ) -> str:
-    """Create or update an animation tag on the sprite."""
+    """Create or update an animation tag on the sprite.
+
+    Args:
+        filename: Name of the Aseprite file to modify
+        name: Tag name
+        from_frame: Starting frame index (1-based)
+        to_frame: Ending frame index (1-based, inclusive)
+        direction: "forward", "reverse", or "ping_pong" (default: "forward")
+    """
     if not os.path.exists(filename):
         return f"File {filename} not found"
+
+    dir_val = _TAG_DIRECTIONS.get(direction.lower())
+    if dir_val is None:
+        return f"Invalid direction '{direction}'; use forward, reverse, or ping_pong"
 
     safe_name = lua_escape(name)
     script = f"""
@@ -784,6 +799,7 @@ async def set_tag(
         tag.toFrame = spr.frames[end_idx]
     end
     tag.name = "{safe_name}"
+    tag.aniDir = {dir_val}
 
     spr:saveAs(spr.filename)
     return "Tag set"
@@ -791,31 +807,48 @@ async def set_tag(
 
     success, output = AsepriteCommand.execute_lua_script(script, filename)
     if success:
-        if direction != "forward":
-            return f"Tag '{name}' set to frames {from_frame}-{to_frame} in {filename} (direction ignored)"
-        return f"Tag '{name}' set to frames {from_frame}-{to_frame} in {filename}"
+        return f"Tag '{name}' set to frames {from_frame}-{to_frame} ({direction}) in {filename}"
     return f"Failed to set tag: {output}"
 
 @mcp.tool()
 async def set_onion_skin(
-    filename: str,
     enabled: bool = True,
     before: int = 2,
     after: int = 2,
     opacity: int = 128
 ) -> str:
-    """Configure onion skin settings for Aseprite."""
-    if not os.path.exists(filename):
-        return f"File {filename} not found"
+    """Configure onion skin preferences (global, not per-file).
+
+    Affects interactive UI sessions only (no effect in --batch mode).
+
+    Args:
+        enabled: Whether onion skin is active (default: True)
+        before: Number of previous frames to show (default: 2)
+        after: Number of next frames to show (default: 2)
+        opacity: Base opacity 0-255 (default: 128)
+    """
     if before < 0 or after < 0:
         return "Before/after must be >= 0"
     if opacity < 0 or opacity > 255:
         return "Opacity must be between 0 and 255"
 
-    return (
-        "Onion skin settings are UI-only in batch mode; no changes applied "
-        f"(enabled={enabled}, before={before}, after={after}, opacity={opacity})"
-    )
+    enabled_flag = "true" if enabled else "false"
+    script = f"""
+    local prefs = app.preferences
+    prefs.onion_skin.active = {enabled_flag}
+    prefs.onion_skin.prev_frames = {before}
+    prefs.onion_skin.next_frames = {after}
+    prefs.onion_skin.opacity_base = {opacity}
+    return "Onion skin preferences updated"
+    """
+
+    success, output = AsepriteCommand.execute_lua_script(script)
+    if success:
+        return (
+            f"Onion skin preferences set (enabled={enabled}, "
+            f"before={before}, after={after}, opacity={opacity})"
+        )
+    return f"Failed to set onion skin: {output}"
 
 @mcp.tool()
 async def propagate_cels(

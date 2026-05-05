@@ -69,19 +69,19 @@ async def ensure_layers_present(
     end_frame_val = "nil" if end_frame is None else str(end_frame)
     layers_lua = "{" + ",".join([f"\"{lua_escape(name)}\"" for name in layer_names]) + "}"
 
-    script = """
+    script = f"""
     local spr = app.activeSprite
     if not spr then return "No active sprite" end
 
-    local start_idx = __START__
-    local end_idx = __END__
+    local start_idx = {start_frame}
+    local end_idx = {end_frame_val}
     if end_idx == nil then end_idx = #spr.frames end
     if start_idx < 1 or end_idx > #spr.frames or start_idx > end_idx then
         return "Frame range out of bounds"
     end
 
-    local names = __LAYERS__
-    local targets = {}
+    local names = {layers_lua}
+    local targets = {{}}
     for _, name in ipairs(names) do
         for _, layer in ipairs(spr.layers) do
             if layer.name == name then
@@ -108,13 +108,6 @@ async def ensure_layers_present(
     spr:saveAs(spr.filename)
     return "Cels ensured"
     """
-
-    script = (
-        script
-        .replace("__START__", str(start_frame))
-        .replace("__END__", end_frame_val)
-        .replace("__LAYERS__", layers_lua)
-    )
 
     success, output = AsepriteCommand.execute_lua_script(script, filename)
     if success:

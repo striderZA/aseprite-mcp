@@ -1,10 +1,21 @@
 import subprocess
 import tempfile
 import os
-import dotenv
 
 _ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
-dotenv.load_dotenv(dotenv_path=_ENV_PATH)
+_env_loaded = False
+
+
+def _ensure_env_loaded():
+    global _env_loaded
+    if _env_loaded:
+        return
+    try:
+        import dotenv
+        dotenv.load_dotenv(dotenv_path=_ENV_PATH)
+    except ImportError:
+        pass
+    _env_loaded = True
 
 
 def lua_escape(s: str) -> str:
@@ -49,6 +60,7 @@ class AsepriteCommand:
         Returns:
             tuple: (success, output) where success is a boolean and output is the command output
         """
+        _ensure_env_loaded()
         try:
             cmd = [os.getenv('ASEPRITE_PATH', 'aseprite')] + args
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
