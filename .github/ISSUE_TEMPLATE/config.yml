@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Aseprite Scripting API Reference
+    url: https://github.com/aseprite/api
+    about: Official Aseprite Lua scripting documentation
