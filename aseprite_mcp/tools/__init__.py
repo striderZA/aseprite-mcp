@@ -12,3 +12,4 @@ from . import transform
 from . import slice
 from . import tileset
 from . import app
+from . import sprite
