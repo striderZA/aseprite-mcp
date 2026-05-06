@@ -44,7 +44,7 @@ uv run -m aseprite_mcp
   "mcp": {
     "aseprite": {
       "type": "local",
-      "command": ["/path/to/aseprite-mcp/.venv/bin/python", "-m", "aseprite_mcp"],
+      "command": ["uv", "--directory", "/path/to/aseprite-mcp", "run", "--no-sync", "-m", "aseprite_mcp"],
       "enabled": true,
       "environment": {
         "ASEPRITE_PATH": "/Applications/Aseprite.app/Contents/MacOS/aseprite"
@@ -54,9 +54,8 @@ uv run -m aseprite_mcp
 }
 ```
 
-> **Faster startup**: Use `.venv/bin/python` directly (skips uv's ~1-2s overhead). Run `uv sync` after pulling changes.
-> **Windows**: `"command": ["C:\\path\\to\\aseprite-mcp\\.venv\\Scripts\\python.exe", "-m", "aseprite_mcp"]`
-> **Alternative (uv)**: `["uv", "--directory", "/path", "run", "--no-sync", "-m", "aseprite_mcp"]` — slower start but auto-syncs.
+> `--no-sync` skips dependency checking on every launch (run `uv sync` after pulling changes).
+> **Windows**: `"command": ["uv", "--directory", "C:\\path\\to\\aseprite-mcp", "run", "--no-sync", "-m", "aseprite_mcp"]`, `"ASEPRITE_PATH": "C:\\Program Files\\Aseprite\\aseprite.exe"`
 
 **Claude Desktop / Cursor** — add to your MCP client config:
 
