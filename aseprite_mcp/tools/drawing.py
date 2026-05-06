@@ -968,3 +968,580 @@ async def apply_gradient_rect(
     if success:
         return f"Gradient applied on '{layer_name}' frame {frame_index} in {filename}"
     return f"Failed to apply gradient: {output}"
+
+
+@mcp.tool()
+async def flood_fill_at(
+    filename: str,
+    layer_name: str,
+    frame_index: int,
+    x: int,
+    y: int,
+    color: str = "#000000",
+    tolerance: int = 0,
+    contiguous: bool = True,
+    create_if_missing: bool = True
+) -> str:
+    """Flood fill a contiguous area on a specific layer/frame.
+
+    Args:
+        filename: Name of the Aseprite file to modify
+        layer_name: Layer name to target
+        frame_index: Frame index starting at 1
+        x: X coordinate to fill from
+        y: Y coordinate to fill from
+        color: Hex color code (default: "#000000")
+        tolerance: Color tolerance for paint bucket (0 = exact match)
+        contiguous: Whether fill is limited to contiguous area
+        create_if_missing: Create cel if it does not exist
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+
+    rgb = _parse_hex_color(color)
+    if rgb is None:
+        return f"Invalid color value: {color}"
+    r, g, b = rgb
+    safe_layer_name = lua_escape(layer_name)
+    create_flag = "true" if create_if_missing else "false"
+
+    if tolerance == 0 and contiguous:
+        filter_op = f"img:floodFill({x}, {y}, Color({r}, {g}, {b}, 255))"
+    else:
+        cont = "true" if contiguous else "false"
+        filter_op = f"""
+        app.useTool({{
+            tool="paint_bucket",
+            color=Color({r}, {g}, {b}, 255),
+            points={{Point({x}, {y})}},
+            tolerance={tolerance},
+            contiguous={cont}
+        }})
+        """
+
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then return "No active sprite" end
+
+    local idx = {frame_index}
+    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+
+    local target = nil
+    for _, layer in ipairs(spr.layers) do
+        if layer.name == "{safe_layer_name}" then target = layer break end
+    end
+    if not target then return "Layer not found" end
+
+    app.transaction(function()
+        app.activeLayer = target
+        app.activeFrame = spr.frames[idx]
+        local cel = target:cel(spr.frames[idx])
+        if not cel and {create_flag} then
+            local img = Image(spr.width, spr.height, spr.colorMode)
+            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
+        end
+        if not cel then return end
+        local img = cel.image
+        {filter_op}
+    end)
+
+    spr:saveAs(spr.filename)
+    return "Flood fill completed"
+    """
+
+    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    if success:
+        return f"Flood fill applied on '{layer_name}' frame {frame_index} in {filename}"
+    return f"Failed to apply flood fill: {output}"
+
+
+@mcp.tool()
+async def replace_color_at(
+    filename: str,
+    layer_name: str,
+    frame_index: int,
+    from_color: str,
+    to_color: str,
+    create_if_missing: bool = True
+) -> str:
+    """Replace one color with another on a specific layer/frame.
+
+    Args:
+        filename: Name of the Aseprite file to modify
+        layer_name: Layer name to target
+        frame_index: Frame index starting at 1
+        from_color: Hex color code to replace
+        to_color: Hex color code to use as replacement
+        create_if_missing: Create cel if it does not exist
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+
+    from_rgb = _parse_hex_color(from_color)
+    if from_rgb is None:
+        return f"Invalid from_color value: {from_color}"
+    to_rgb = _parse_hex_color(to_color)
+    if to_rgb is None:
+        return f"Invalid to_color value: {to_color}"
+    fr, fg, fb = from_rgb
+    tr, tg, tb = to_rgb
+    safe_layer_name = lua_escape(layer_name)
+    create_flag = "true" if create_if_missing else "false"
+
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then return "No active sprite" end
+
+    local idx = {frame_index}
+    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+
+    local target = nil
+    for _, layer in ipairs(spr.layers) do
+        if layer.name == "{safe_layer_name}" then target = layer break end
+    end
+    if not target then return "Layer not found" end
+
+    app.transaction(function()
+        app.activeLayer = target
+        app.activeFrame = spr.frames[idx]
+        local cel = target:cel(spr.frames[idx])
+        if not cel and {create_flag} then
+            local img = Image(spr.width, spr.height, spr.colorMode)
+            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
+        end
+        if not cel then return end
+        local img = cel.image
+        img:replaceColor(Color({fr}, {fg}, {fb}, 255), Color({tr}, {tg}, {tb}, 255))
+    end)
+
+    spr:saveAs(spr.filename)
+    return "Color replaced"
+    """
+
+    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    if success:
+        return f"Color replaced on '{layer_name}' frame {frame_index} in {filename}"
+    return f"Failed to replace color: {output}"
+
+
+@mcp.tool()
+async def invert_colors_at(
+    filename: str,
+    layer_name: str,
+    frame_index: int,
+    create_if_missing: bool = True
+) -> str:
+    """Invert colors on a specific layer/frame.
+
+    Args:
+        filename: Name of the Aseprite file to modify
+        layer_name: Layer name to target
+        frame_index: Frame index starting at 1
+        create_if_missing: Create cel if it does not exist
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+
+    safe_layer_name = lua_escape(layer_name)
+    create_flag = "true" if create_if_missing else "false"
+
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then return "No active sprite" end
+
+    local idx = {frame_index}
+    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+
+    local target = nil
+    for _, layer in ipairs(spr.layers) do
+        if layer.name == "{safe_layer_name}" then target = layer break end
+    end
+    if not target then return "Layer not found" end
+
+    app.transaction(function()
+        app.activeLayer = target
+        app.activeFrame = spr.frames[idx]
+        local cel = target:cel(spr.frames[idx])
+        if not cel and {create_flag} then
+            local img = Image(spr.width, spr.height, spr.colorMode)
+            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
+        end
+        if not cel then return end
+        local img = cel.image
+        img:invert()
+    end)
+
+    spr:saveAs(spr.filename)
+    return "Colors inverted"
+    """
+
+    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    if success:
+        return f"Colors inverted on '{layer_name}' frame {frame_index} in {filename}"
+    return f"Failed to invert colors: {output}"
+
+
+@mcp.tool()
+async def apply_noise_at(
+    filename: str,
+    layer_name: str,
+    frame_index: int,
+    amount: float,
+    color: str = "#FFFFFF",
+    create_if_missing: bool = True
+) -> str:
+    """Apply noise effect on a specific layer/frame.
+
+    Args:
+        filename: Name of the Aseprite file to modify
+        layer_name: Layer name to target
+        frame_index: Frame index starting at 1
+        amount: Amount of noise to apply (0.0 to 1.0)
+        color: Hex color code for noise pixels (default: "#FFFFFF")
+        create_if_missing: Create cel if it does not exist
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+
+    rgb = _parse_hex_color(color)
+    if rgb is None:
+        return f"Invalid color value: {color}"
+    r, g, b = rgb
+    safe_layer_name = lua_escape(layer_name)
+    create_flag = "true" if create_if_missing else "false"
+
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then return "No active sprite" end
+
+    local idx = {frame_index}
+    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+
+    local target = nil
+    for _, layer in ipairs(spr.layers) do
+        if layer.name == "{safe_layer_name}" then target = layer break end
+    end
+    if not target then return "Layer not found" end
+
+    app.transaction(function()
+        app.activeLayer = target
+        app.activeFrame = spr.frames[idx]
+        local cel = target:cel(spr.frames[idx])
+        if not cel and {create_flag} then
+            local img = Image(spr.width, spr.height, spr.colorMode)
+            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
+        end
+        if not cel then return end
+        local img = cel.image
+        img:noise({amount}, Color({r}, {g}, {b}, 255))
+    end)
+
+    spr:saveAs(spr.filename)
+    return "Noise applied"
+    """
+
+    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    if success:
+        return f"Noise applied on '{layer_name}' frame {frame_index} in {filename}"
+    return f"Failed to apply noise: {output}"
+
+
+@mcp.tool()
+async def apply_despeckle_at(
+    filename: str,
+    layer_name: str,
+    frame_index: int,
+    create_if_missing: bool = True
+) -> str:
+    """Remove noise (despeckle) on a specific layer/frame.
+
+    Args:
+        filename: Name of the Aseprite file to modify
+        layer_name: Layer name to target
+        frame_index: Frame index starting at 1
+        create_if_missing: Create cel if it does not exist
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+
+    safe_layer_name = lua_escape(layer_name)
+    create_flag = "true" if create_if_missing else "false"
+
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then return "No active sprite" end
+
+    local idx = {frame_index}
+    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+
+    local target = nil
+    for _, layer in ipairs(spr.layers) do
+        if layer.name == "{safe_layer_name}" then target = layer break end
+    end
+    if not target then return "Layer not found" end
+
+    app.transaction(function()
+        app.activeLayer = target
+        app.activeFrame = spr.frames[idx]
+        local cel = target:cel(spr.frames[idx])
+        if not cel and {create_flag} then
+            local img = Image(spr.width, spr.height, spr.colorMode)
+            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
+        end
+        if not cel then return end
+        local img = cel.image
+        img:despeckle()
+    end)
+
+    spr:saveAs(spr.filename)
+    return "Despeckle applied"
+    """
+
+    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    if success:
+        return f"Despeckle applied on '{layer_name}' frame {frame_index} in {filename}"
+    return f"Failed to apply despeckle: {output}"
+
+
+@mcp.tool()
+async def apply_sobel_at(
+    filename: str,
+    layer_name: str,
+    frame_index: int,
+    create_if_missing: bool = True
+) -> str:
+    """Apply Sobel edge detection on a specific layer/frame.
+
+    Args:
+        filename: Name of the Aseprite file to modify
+        layer_name: Layer name to target
+        frame_index: Frame index starting at 1
+        create_if_missing: Create cel if it does not exist
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+
+    safe_layer_name = lua_escape(layer_name)
+    create_flag = "true" if create_if_missing else "false"
+
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then return "No active sprite" end
+
+    local idx = {frame_index}
+    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+
+    local target = nil
+    for _, layer in ipairs(spr.layers) do
+        if layer.name == "{safe_layer_name}" then target = layer break end
+    end
+    if not target then return "Layer not found" end
+
+    app.transaction(function()
+        app.activeLayer = target
+        app.activeFrame = spr.frames[idx]
+        local cel = target:cel(spr.frames[idx])
+        if not cel and {create_flag} then
+            local img = Image(spr.width, spr.height, spr.colorMode)
+            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
+        end
+        if not cel then return end
+        local img = cel.image
+        img:sobel()
+    end)
+
+    spr:saveAs(spr.filename)
+    return "Sobel edge detection applied"
+    """
+
+    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    if success:
+        return f"Sobel edge detection applied on '{layer_name}' frame {frame_index} in {filename}"
+    return f"Failed to apply Sobel: {output}"
+
+
+@mcp.tool()
+async def apply_oil_at(
+    filename: str,
+    layer_name: str,
+    frame_index: int,
+    size: int = 3,
+    intensity: int = 50,
+    create_if_missing: bool = True
+) -> str:
+    """Apply oil paint effect on a specific layer/frame.
+
+    Args:
+        filename: Name of the Aseprite file to modify
+        layer_name: Layer name to target
+        frame_index: Frame index starting at 1
+        size: Brush size for oil effect (default: 3)
+        intensity: Effect intensity (default: 50)
+        create_if_missing: Create cel if it does not exist
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+
+    safe_layer_name = lua_escape(layer_name)
+    create_flag = "true" if create_if_missing else "false"
+
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then return "No active sprite" end
+
+    local idx = {frame_index}
+    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+
+    local target = nil
+    for _, layer in ipairs(spr.layers) do
+        if layer.name == "{safe_layer_name}" then target = layer break end
+    end
+    if not target then return "Layer not found" end
+
+    app.transaction(function()
+        app.activeLayer = target
+        app.activeFrame = spr.frames[idx]
+        local cel = target:cel(spr.frames[idx])
+        if not cel and {create_flag} then
+            local img = Image(spr.width, spr.height, spr.colorMode)
+            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
+        end
+        if not cel then return end
+        local img = cel.image
+        img:oil({size}, {intensity})
+    end)
+
+    spr:saveAs(spr.filename)
+    return "Oil effect applied"
+    """
+
+    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    if success:
+        return f"Oil effect applied on '{layer_name}' frame {frame_index} in {filename}"
+    return f"Failed to apply oil effect: {output}"
+
+
+@mcp.tool()
+async def apply_super_pixel_at(
+    filename: str,
+    layer_name: str,
+    frame_index: int,
+    pixel_width: int = 4,
+    pixel_height: int = 4,
+    create_if_missing: bool = True
+) -> str:
+    """Apply pixelation (super pixel) effect on a specific layer/frame.
+
+    Args:
+        filename: Name of the Aseprite file to modify
+        layer_name: Layer name to target
+        frame_index: Frame index starting at 1
+        pixel_width: Width of super pixel blocks (default: 4)
+        pixel_height: Height of super pixel blocks (default: 4)
+        create_if_missing: Create cel if it does not exist
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+
+    safe_layer_name = lua_escape(layer_name)
+    create_flag = "true" if create_if_missing else "false"
+
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then return "No active sprite" end
+
+    local idx = {frame_index}
+    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+
+    local target = nil
+    for _, layer in ipairs(spr.layers) do
+        if layer.name == "{safe_layer_name}" then target = layer break end
+    end
+    if not target then return "Layer not found" end
+
+    app.transaction(function()
+        app.activeLayer = target
+        app.activeFrame = spr.frames[idx]
+        local cel = target:cel(spr.frames[idx])
+        if not cel and {create_flag} then
+            local img = Image(spr.width, spr.height, spr.colorMode)
+            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
+        end
+        if not cel then return end
+        local img = cel.image
+        img:superPixel({pixel_width}, {pixel_height})
+    end)
+
+    spr:saveAs(spr.filename)
+    return "Super pixel effect applied"
+    """
+
+    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    if success:
+        return f"Super pixel effect applied on '{layer_name}' frame {frame_index} in {filename}"
+    return f"Failed to apply super pixel effect: {output}"
+
+
+@mcp.tool()
+async def adjust_hsl_at(
+    filename: str,
+    layer_name: str,
+    frame_index: int,
+    hue: float = 0.0,
+    saturation: float = 0.0,
+    value: float = 0.0,
+    lightness: float = 0.0,
+    create_if_missing: bool = True
+) -> str:
+    """Adjust HSL values on a specific layer/frame.
+
+    Args:
+        filename: Name of the Aseprite file to modify
+        layer_name: Layer name to target
+        frame_index: Frame index starting at 1
+        hue: Hue adjustment (-1.0 to 1.0, default: 0.0)
+        saturation: Saturation adjustment (-1.0 to 1.0, default: 0.0)
+        value: Value (brightness) adjustment (-1.0 to 1.0, default: 0.0)
+        lightness: Lightness adjustment (-1.0 to 1.0, default: 0.0)
+        create_if_missing: Create cel if it does not exist
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+
+    safe_layer_name = lua_escape(layer_name)
+    create_flag = "true" if create_if_missing else "false"
+
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then return "No active sprite" end
+
+    local idx = {frame_index}
+    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+
+    local target = nil
+    for _, layer in ipairs(spr.layers) do
+        if layer.name == "{safe_layer_name}" then target = layer break end
+    end
+    if not target then return "Layer not found" end
+
+    app.transaction(function()
+        app.activeLayer = target
+        app.activeFrame = spr.frames[idx]
+        local cel = target:cel(spr.frames[idx])
+        if not cel and {create_flag} then
+            local img = Image(spr.width, spr.height, spr.colorMode)
+            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
+        end
+        if not cel then return end
+        local img = cel.image
+        img:adjustColors({hue}, {saturation}, {value}, {lightness})
+    end)
+
+    spr:saveAs(spr.filename)
+    return "HSL adjusted"
+    """
+
+    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    if success:
+        return f"HSL adjusted on '{layer_name}' frame {frame_index} in {filename}"
+    return f"Failed to adjust HSL: {output}"

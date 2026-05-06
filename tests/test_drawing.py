@@ -35,3 +35,41 @@ class TestParseHexColor:
 
     def test_white(self):
         assert _parse_hex_color("#FFFFFF") == (255, 255, 255)
+
+
+class TestFilterTools:
+    def test_flood_fill_at_import(self):
+        from aseprite_mcp.tools.drawing import flood_fill_at
+        assert callable(flood_fill_at)
+
+    def test_replace_color_at_import(self):
+        from aseprite_mcp.tools.drawing import replace_color_at
+        assert callable(replace_color_at)
+
+    def test_invert_colors_at_import(self):
+        from aseprite_mcp.tools.drawing import invert_colors_at
+        assert callable(invert_colors_at)
+
+    def test_apply_noise_at_import(self):
+        from aseprite_mcp.tools.drawing import apply_noise_at
+        assert callable(apply_noise_at)
+
+    def test_apply_despeckle_at_import(self):
+        from aseprite_mcp.tools.drawing import apply_despeckle_at
+        assert callable(apply_despeckle_at)
+
+    def test_apply_sobel_at_import(self):
+        from aseprite_mcp.tools.drawing import apply_sobel_at
+        assert callable(apply_sobel_at)
+
+    def test_apply_oil_at_import(self):
+        from aseprite_mcp.tools.drawing import apply_oil_at
+        assert callable(apply_oil_at)
+
+    def test_apply_super_pixel_at_import(self):
+        from aseprite_mcp.tools.drawing import apply_super_pixel_at
+        assert callable(apply_super_pixel_at)
+
+    def test_adjust_hsl_at_import(self):
+        from aseprite_mcp.tools.drawing import adjust_hsl_at
+        assert callable(adjust_hsl_at)
