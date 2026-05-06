@@ -224,31 +224,3 @@ async def duplicate_sprite(filename: str, output_filename: str) -> str:
     return f"Failed to duplicate sprite: {output}"
 
 
-@mcp.tool()
-async def flatten_layers(filename: str) -> str:
-    """Flatten all layers in the Aseprite file into a single layer.
-
-    Merges all visible layers into one, discarding transparency
-    from lower layers as they are composited.
-
-    Args:
-        filename: Name of the Aseprite file to flatten
-    """
-    if not os.path.exists(filename):
-        return f"File {filename} not found"
-
-    script = """
-    local spr = app.activeSprite
-    if not spr then return "No active sprite" end
-
-    app.command.FlattenLayers()
-
-    spr:saveAs(spr.filename)
-    return "Layers flattened"
-    """
-
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
-
-    if success:
-        return f"Layers flattened in {filename}"
-    return f"Failed to flatten layers: {output}"
