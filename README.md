@@ -20,16 +20,16 @@
 ## Quick Start
 
 ```bash
-# Requires Python 3.13+ and uv
 git clone https://github.com/striderZA/aseprite-mcp
 cd aseprite-mcp
+uv sync                        # install dependencies into .venv
 ASEPRITE_PATH=/path/to/aseprite uv run -m aseprite_mcp
 ```
 
 ```powershell
-# PowerShell
 git clone https://github.com/striderZA/aseprite-mcp
 cd aseprite-mcp
+uv sync                        # install dependencies into .venv
 $env:ASEPRITE_PATH = "C:\Program Files\Aseprite\aseprite.exe"
 uv run -m aseprite_mcp
 ```
