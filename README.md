@@ -44,18 +44,18 @@ uv run -m aseprite_mcp
   "mcp": {
     "aseprite": {
       "type": "local",
-      "command": ["uv", "--directory", "/path/to/aseprite-mcp", "run", "-m", "aseprite_mcp"],
+      "command": ["uv", "--directory", "/path/to/aseprite-mcp", "run", "--no-sync", "-m", "aseprite_mcp"],
       "enabled": true,
       "environment": {
-        "ASEPRITE_PATH": "/path/to/aseprite"
+        "ASEPRITE_PATH": "/Applications/Aseprite.app/Contents/MacOS/aseprite"
       }
     }
   }
 }
 ```
 
-> **Windows**: Use `"command": ["uv", "--directory", "C:\\path\\to\\aseprite-mcp", "run", "-m", "aseprite_mcp"]` and `"ASEPRITE_PATH": "C:\\Program Files\\Aseprite\\aseprite.exe"`
-> **macOS Homebrew**: Change `"command"` to `["/opt/homebrew/bin/uv", ...]` if `uv` is not in PATH.
+> **Windows**: `"command": ["uv", "--directory", "C:\\path\\to\\aseprite-mcp", "run", "--no-sync", "-m", "aseprite_mcp"]` and `"ASEPRITE_PATH": "C:\\Program Files\\Aseprite\\aseprite.exe"`
+> `--no-sync` skips the venv check on every launch (run `uv sync` once after clone).
 
 **Claude Desktop / Cursor** — add to your MCP client config:
 
