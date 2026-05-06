@@ -36,21 +36,39 @@ uv run -m aseprite_mcp
 
 ### MCP Client Configuration
 
-Add to your MCP client config (`claude_desktop_config.json`, Cursor MCP config, etc.):
+**OpenCode** — add to `opencode.json` in the project root:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "aseprite": {
+      "type": "local",
+      "command": ["uv", "--directory", "/path/to/aseprite-mcp", "run", "-m", "aseprite_mcp"],
+      "enabled": true,
+      "environment": {
+        "ASEPRITE_PATH": "/path/to/aseprite"
+      }
+    }
+  }
+}
+```
+
+> **Windows**: Use `"command": ["uv", "--directory", "C:\\path\\to\\aseprite-mcp", "run", "-m", "aseprite_mcp"]` and `"ASEPRITE_PATH": "C:\\Program Files\\Aseprite\\aseprite.exe"`
+> **macOS Homebrew**: Change `"command"` to `["/opt/homebrew/bin/uv", ...]` if `uv` is not in PATH.
+
+**Claude Desktop / Cursor** — add to your MCP client config:
 
 ```json
 {
   "mcpServers": {
     "aseprite": {
       "command": "uv",
-      "args": ["--directory", "/absolute/path/to/aseprite-mcp", "run", "-m", "aseprite_mcp"]
+      "args": ["--directory", "/path/to/aseprite-mcp", "run", "-m", "aseprite_mcp"]
     }
   }
 }
 ```
-
-> **Windows**: Use `"command": "uv"` with `\\` path separators in `args`.
-> **macOS Homebrew**: Replace `"command"` with `"/opt/homebrew/bin/uv"` if `uv` is not in PATH.
 
 ## Tool Reference
 
