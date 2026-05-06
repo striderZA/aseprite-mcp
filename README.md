@@ -26,6 +26,14 @@ cd aseprite-mcp
 ASEPRITE_PATH=/path/to/aseprite uv run -m aseprite_mcp
 ```
 
+```powershell
+# PowerShell
+git clone https://github.com/striderZA/aseprite-mcp
+cd aseprite-mcp
+$env:ASEPRITE_PATH = "C:\Program Files\Aseprite\aseprite.exe"
+uv run -m aseprite_mcp
+```
+
 ### MCP Client Configuration
 
 Add to your MCP client config (`claude_desktop_config.json`, Cursor MCP config, etc.):
