@@ -33,9 +33,13 @@ ENV/
 *.swp
 *.swo
 
-# Aseprite files
+# Aseprite files & exports
 *.aseprite
 *.ase
 *.png
 *.gif
 *.jpg
+test_*.json
+
+test_tile_sheet.json
+*.json
