@@ -183,7 +183,7 @@ async def get_sprite_info(filename: str) -> str:
         end
     end
     table.insert(parts, "]}")
-    return table.concat(parts)
+    print(table.concat(parts))
     """
 
     success, output = AsepriteCommand.execute_lua_script(script, filename)

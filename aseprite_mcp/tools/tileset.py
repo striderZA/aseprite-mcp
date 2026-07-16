@@ -24,10 +24,11 @@ async def create_tileset(filename: str, name: str, tile_width: int, tile_height:
     local spr = app.activeSprite
     if not spr then return "No active sprite" end
 
-    local ts = spr:newTileset("{safe_name}", {tile_width}, {tile_height})
+    local ts = spr:newTileset(Rectangle(0, 0, {tile_width}, {tile_height}))
     if not ts then
         return "Failed to create tileset"
     end
+    ts.name = "{safe_name}"
 
     spr:saveAs(spr.filename)
     return "Tileset created successfully"
@@ -100,9 +101,9 @@ async def get_tilesets(filename: str) -> str:
     for i, ts in ipairs(spr.tilesets) do
         table.insert(parts, "{")
         table.insert(parts, "\\"name\\":\\"" .. ts.name .. "\\",")
-        table.insert(parts, "\\"tileWidth\\":" .. ts.tileWidth .. ",")
-        table.insert(parts, "\\"tileHeight\\":" .. ts.tileHeight .. ",")
-        table.insert(parts, "\\"colorMode\\":" .. ts.colorMode)
+        table.insert(parts, "\\"tileWidth\\":" .. ts.grid.tileSize.width .. ",")
+        table.insert(parts, "\\"tileHeight\\":" .. ts.grid.tileSize.height .. ",")
+        table.insert(parts, "\\"baseIndex\\":" .. ts.baseIndex)
         table.insert(parts, "}")
         if i < #spr.tilesets then
             table.insert(parts, ",")

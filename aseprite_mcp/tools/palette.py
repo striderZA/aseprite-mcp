@@ -279,24 +279,37 @@ async def find_palette_color(filename: str, color_hex: str) -> str:
 
     script = f"""
     local spr = app.activeSprite
-    if not spr then return '{{"error":"No active sprite"}}' end
+    if not spr then print('{{"error":"No active sprite"}}') return end
 
     local ok, pal = pcall(function() return spr.palettes[1] end)
-    if not ok or not pal then return '{{"error":"No palette"}}' end
+    if not ok or not pal then print('{{"error":"No palette"}}') return end
 
-    local target = Color({r}, {g}, {b})
+    local tr, tg, tb = {r}, {g}, {b}
+    local size = #pal
 
-    local exact = pal:findExactMatch(target)
-    if exact then
-        return '{{"index":' .. exact .. ',"match":"exact"}}'
+    -- Exact match
+    for i = 0, size - 1 do
+        local c = pal:getColor(i)
+        if c.red == tr and c.green == tg and c.blue == tb then
+            print('{{"index":' .. i .. ',"match":"exact"}}') return
+        end
     end
 
-    local best = pal:findBestMatch(target)
-    if best then
-        return '{{"index":' .. best .. ',"match":"best"}}'
+    -- Best match (Euclidean distance)
+    local best_idx = 0
+    local best_dist = math.huge
+    for i = 0, size - 1 do
+        local c = pal:getColor(i)
+        local dr = c.red - tr
+        local dg = c.green - tg
+        local db = c.blue - tb
+        local dist = dr * dr + dg * dg + db * db
+        if dist < best_dist then
+            best_dist = dist
+            best_idx = i
+        end
     end
-
-    return '{{"error":"No match found"}}'
+    print('{{"index":' .. best_idx .. ',"match":"best"}}')
     """
 
     success, output = AsepriteCommand.execute_lua_script(script, filename)

@@ -20,6 +20,8 @@ async def flip_layer(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
+    if not isinstance(frame_index, int) or frame_index < 1:
+        return "frame_index must be a positive integer"
     if direction not in ("horizontal", "vertical"):
         return "direction must be 'horizontal' or 'vertical'"
 
@@ -94,6 +96,8 @@ async def rotate_layer(
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
+    if not isinstance(frame_index, int) or frame_index < 1:
+        return "frame_index must be a positive integer"
     if angle not in (90, 180, 270):
         return "angle must be 90, 180, or 270"
 

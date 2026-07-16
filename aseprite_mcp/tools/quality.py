@@ -430,7 +430,7 @@ async def audit_animation(
     end
 
     table.insert(parts, "}}")
-    return table.concat(parts)
+    print(table.concat(parts))
     """
 
     success, output = AsepriteCommand.execute_lua_script(script, filename)

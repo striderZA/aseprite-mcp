@@ -130,7 +130,7 @@ async def get_selection(filename: str) -> str:
 
     script = """
     local spr = app.activeSprite
-    if not spr then return '{"error":"No active sprite"}' end
+    if not spr then print('{"error":"No active sprite"}') return end
 
     local sel = spr.selection
     local parts = {}
@@ -159,17 +159,20 @@ async def get_selection(filename: str) -> str:
     end
 
     table.insert(parts, '}')
-    return table.concat(parts)
+    print(table.concat(parts))
     """
 
     success, output = AsepriteCommand.execute_lua_script(script, filename)
     if not success:
         return json.dumps({"error": output})
+    output = output.strip()
+    if not output:
+        return json.dumps({"isEmpty": True, "bounds": None, "origin": None})
     try:
         json.loads(output)
         return output
     except json.JSONDecodeError:
-        return json.dumps({"error": "Failed to parse selection data"})
+        return json.dumps({"error": "Failed to parse selection data", "raw": output})
 
 
 @mcp.tool()

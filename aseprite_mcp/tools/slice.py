@@ -96,8 +96,8 @@ async def create_slice(
     if not spr then return "No active sprite" end
 
     app.transaction(function()
-        if #spr.layers == 0 then return "No layers in sprite" end
-        local slice = spr:newSlice(spr.layers[1], spr.frames[1], "{safe_name}", Rectangle({x}, {y}, {width}, {height}))
+        local slice = spr:newSlice(Rectangle({x}, {y}, {width}, {height}))
+        slice.name = "{safe_name}"
         slice.center = {center_lua}
         slice.pivot = {pivot_lua}
         {color_line}
@@ -194,7 +194,7 @@ async def get_slices(filename: str) -> str:
         )
         table.insert(parts, entry)
     end
-    return "[" .. table.concat(parts, ",") .. "]"
+    print("[" .. table.concat(parts, ",") .. "]")
     """
 
     success, output = AsepriteCommand.execute_lua_script(script, filename)
