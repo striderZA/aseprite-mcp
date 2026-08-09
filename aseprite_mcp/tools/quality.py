@@ -71,13 +71,13 @@ async def ensure_layers_present(
 
     script = f"""
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     local start_idx = {start_frame}
     local end_idx = {end_frame_val}
     if end_idx == nil then end_idx = #spr.frames end
     if start_idx < 1 or end_idx > #spr.frames or start_idx > end_idx then
-        return "Frame range out of bounds"
+        print("ERROR:Frame range out of bounds") return
     end
 
     local names = {layers_lua}
@@ -90,7 +90,7 @@ async def ensure_layers_present(
             end
         end
     end
-    if #targets == 0 then return "No layers found" end
+    if #targets == 0 then print("ERROR:No layers found") return end
 
     app.transaction(function()
         for fi = start_idx, end_idx do
@@ -106,10 +106,10 @@ async def ensure_layers_present(
     end)
 
     spr:saveAs(spr.filename)
-    return "Cels ensured"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
     if success:
         return (
             f"Ensured cels for layers {', '.join(layer_names)} "
@@ -138,13 +138,13 @@ async def validate_scene(
 
     script = """
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     local start_idx = __START__
     local end_idx = __END__
     if end_idx == nil then end_idx = #spr.frames end
     if start_idx < 1 or end_idx > #spr.frames or start_idx > end_idx then
-        return "Frame range out of bounds"
+        print("ERROR:Frame range out of bounds") return
     end
 
     local names = __LAYERS__
@@ -198,7 +198,7 @@ async def validate_scene(
         .replace("__LAYERS__", layers_lua)
     )
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
     if success:
         return output
     return f"Failed to validate scene: {output}"
@@ -244,13 +244,13 @@ async def audit_animation(
 
     script = f"""
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     local start_idx = {start_frame}
     local end_idx = {end_frame_val}
     if end_idx == nil then end_idx = #spr.frames end
     if start_idx < 1 or end_idx > #spr.frames or start_idx > end_idx then
-        return "Frame range out of bounds"
+        print("ERROR:Frame range out of bounds") return
     end
 
     local target_names = {layers_lua}
@@ -430,10 +430,11 @@ async def audit_animation(
     end
 
     table.insert(parts, "}}")
+    -- batch mode discards Lua `return` values; output must be printed
     print(table.concat(parts))
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
     if success:
         return output
     return f"Failed to audit animation: {output}"
@@ -499,13 +500,13 @@ async def animation_sanitize(
 
     script = f"""
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     local start_idx = {start_frame}
     local end_idx = {end_frame_val}
     if end_idx == nil then end_idx = #spr.frames end
     if start_idx < 1 or end_idx > #spr.frames or start_idx > end_idx then
-        return "Frame range out of bounds"
+        print("ERROR:Frame range out of bounds") return
     end
 
     local target_names = {layers_lua}
@@ -847,7 +848,7 @@ async def animation_sanitize(
     return output
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
     if success:
         return output
     return f"Failed to sanitize animation: {output}"

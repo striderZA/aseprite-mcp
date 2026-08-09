@@ -13,4 +13,12 @@ from . import slice
 from . import tileset
 from . import app
 from . import sprite
+from . import layers
 from . import selection
+from . import fx
+from . import analysis
+from . import slices
+from . import tilemap
+from . import script
+from . import text
+from . import native_fx

@@ -1,7 +1,7 @@
 import os
 import json
 from typing import Optional
-from ..core.commands import AsepriteCommand, lua_escape, reject_traversal
+from ..core.commands import AsepriteCommand, lua_escape
 from .. import mcp
 
 
@@ -24,133 +24,6 @@ def _format_slice_data(slices_output: str) -> str:
     if not slices_output or slices_output.strip() == "":
         return "[]"
     return slices_output
-
-
-@mcp.tool()
-async def create_slice(
-    filename: str,
-    name: str,
-    x: int,
-    y: int,
-    width: int,
-    height: int,
-    color: str = "",
-    data: str = "",
-    center_x: Optional[int] = None,
-    center_y: Optional[int] = None,
-    center_width: Optional[int] = None,
-    center_height: Optional[int] = None,
-    pivot_x: Optional[float] = None,
-    pivot_y: Optional[float] = None,
-) -> str:
-    """Create a new slice with the specified bounds and properties.
-
-    Args:
-        filename: Name of the Aseprite file to modify
-        name: Slice name
-        x: Slice bounds x coordinate
-        y: Slice bounds y coordinate
-        width: Slice bounds width
-        height: Slice bounds height
-        color: Hex color for timeline label (e.g. "#FF0000")
-        data: User-defined data string attached to the slice
-        center_x: 9-slice center rectangle x
-        center_y: 9-slice center rectangle y
-        center_width: 9-slice center rectangle width
-        center_height: 9-slice center rectangle height
-        pivot_x: Pivot point x coordinate
-        pivot_y: Pivot point y coordinate
-    """
-    if not os.path.exists(filename):
-        return f"File {filename} not found"
-    if width <= 0 or height <= 0:
-        return "Width and height must be > 0"
-
-    safe_name = lua_escape(name)
-    safe_data = lua_escape(data)
-    color_r, color_g, color_b = None, None, None
-    if color:
-        rgb = _parse_hex_color(color)
-        if rgb is None:
-            return f"Invalid color value: {color}"
-        color_r, color_g, color_b = rgb
-
-    center_lua = "nil"
-    if all(v is not None for v in (center_x, center_y, center_width, center_height)):
-        center_lua = f"Rectangle({center_x}, {center_y}, {center_width}, {center_height})"
-
-    pivot_lua = "nil"
-    if pivot_x is not None and pivot_y is not None:
-        pivot_lua = f"Point({pivot_x}, {pivot_y})"
-
-    color_line = ""
-    if color_r is not None:
-        color_line = f"    slice.color = Color({color_r}, {color_g}, {color_b})"
-
-    data_line = ""
-    if data:
-        data_line = f'    slice.data = "{safe_data}"'
-
-    script = f"""
-    local spr = app.activeSprite
-    if not spr then return "No active sprite" end
-
-    app.transaction(function()
-        local slice = spr:newSlice(Rectangle({x}, {y}, {width}, {height}))
-        slice.name = "{safe_name}"
-        slice.center = {center_lua}
-        slice.pivot = {pivot_lua}
-        {color_line}
-        {data_line}
-    end)
-
-    spr:saveAs(spr.filename)
-    return "Slice created"
-    """
-
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
-    if success:
-        return f"Slice '{name}' created in {filename}"
-    return f"Failed to create slice: {output}"
-
-
-@mcp.tool()
-async def delete_slice(filename: str, name: str) -> str:
-    """Delete a slice by name.
-
-    Args:
-        filename: Name of the Aseprite file to modify
-        name: Name of the slice to delete
-    """
-    if not os.path.exists(filename):
-        return f"File {filename} not found"
-
-    safe_name = lua_escape(name)
-
-    script = f"""
-    local spr = app.activeSprite
-    if not spr then return "No active sprite" end
-
-    local found = false
-    app.transaction(function()
-        for i, s in ipairs(spr.slices) do
-            if s.name == "{safe_name}" then
-                spr:deleteSlice(s)
-                found = true
-                break
-            end
-        end
-    end)
-
-    if not found then return "Slice not found" end
-    spr:saveAs(spr.filename)
-    return "Slice deleted"
-    """
-
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
-    if success:
-        return f"Slice '{name}' deleted from {filename}"
-    return f"Failed to delete slice: {output}"
 
 
 @mcp.tool()

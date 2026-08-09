@@ -4,13 +4,16 @@ from aseprite_mcp.tools.drawing import _parse_hex_color
 
 class TestParseHexColor:
     def test_valid_hex(self):
-        assert _parse_hex_color("#FF0000") == (255, 0, 0)
+        assert _parse_hex_color("#FF0000") == (255, 0, 0, 255)
 
     def test_valid_hex_lowercase(self):
-        assert _parse_hex_color("#00ff00") == (0, 255, 0)
+        assert _parse_hex_color("#00ff00") == (0, 255, 0, 255)
 
     def test_valid_hex_mixed_case(self):
-        assert _parse_hex_color("#AaBbCc") == (170, 187, 204)
+        assert _parse_hex_color("#AaBbCc") == (170, 187, 204, 255)
+
+    def test_valid_hex_with_alpha(self):
+        assert _parse_hex_color("#FF000080") == (255, 0, 0, 128)
 
     def test_returns_none_for_empty(self):
         assert _parse_hex_color("") is None
@@ -18,23 +21,23 @@ class TestParseHexColor:
     def test_returns_none_for_none(self):
         assert _parse_hex_color(None) is None
 
-    def test_returns_none_for_short_hex(self):
-        assert _parse_hex_color("#FFF") is None
+    def test_accepts_shorthand_hex(self):
+        assert _parse_hex_color("#FFF") == (255, 255, 255, 255)
 
     def test_returns_none_for_invalid_chars(self):
         assert _parse_hex_color("#GGGGGG") is None
 
     def test_accepts_hex_without_hash(self):
-        assert _parse_hex_color("FF0000") == (255, 0, 0)
+        assert _parse_hex_color("FF0000") == (255, 0, 0, 255)
 
     def test_works_without_hash_prefix(self):
-        assert _parse_hex_color("FF0000") == (255, 0, 0)
+        assert _parse_hex_color("FF0000") == (255, 0, 0, 255)
 
     def test_black(self):
-        assert _parse_hex_color("#000000") == (0, 0, 0)
+        assert _parse_hex_color("#000000") == (0, 0, 0, 255)
 
     def test_white(self):
-        assert _parse_hex_color("#FFFFFF") == (255, 255, 255)
+        assert _parse_hex_color("#FFFFFF") == (255, 255, 255, 255)
 
 
 class TestFilterTools:
@@ -73,3 +76,20 @@ class TestFilterTools:
     def test_adjust_hsl_at_import(self):
         from aseprite_mcp.tools.drawing import adjust_hsl_at
         assert callable(adjust_hsl_at)
+
+
+"""Drawing tools added in this round (drawing.py)."""
+from conftest import ok, run
+
+from aseprite_mcp.tools import drawing, pixel_read
+
+
+def test_draw_ellipse_at(sprite):
+    ok(run(drawing.draw_ellipse_at(sprite, "body", 1, 16, 16, 6, 4, "#306230", True)))
+    px = ok(run(pixel_read.get_pixel_color(sprite, 16, 16, "body", 1)))
+    assert "#306230" in px
+
+
+def test_draw_ellipse_rejects_bad_radius(sprite):
+    result = run(drawing.draw_ellipse_at(sprite, "body", 1, 16, 16, 0, 4, "#306230"))
+    assert "must be > 0" in result

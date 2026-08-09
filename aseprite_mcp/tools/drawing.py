@@ -1,22 +1,14 @@
 import os
 from typing import List, Dict, Any
 from ..core.commands import AsepriteCommand, lua_escape
+from ..core.lua import FIND_LAYER, NORMALIZE_CEL, PSET
+from ..core.colors import parse_hex_color
 from .. import mcp
 
 
-def _parse_hex_color(value: str) -> tuple[int, int, int] | None:
-    if not value:
-        return None
-    hex_color = value.lstrip("#")
-    if len(hex_color) != 6:
-        return None
-    try:
-        r = int(hex_color[0:2], 16)
-        g = int(hex_color[2:4], 16)
-        b = int(hex_color[4:6], 16)
-    except ValueError:
-        return None
-    return r, g, b
+def _parse_hex_color(value: str) -> tuple[int, int, int, int] | None:
+    """Parse a hex colour to (r, g, b, a); accepts #RRGGBB and #RRGGBBAA."""
+    return parse_hex_color(value)
 
 
 @mcp.tool()
@@ -34,7 +26,7 @@ async def draw_pixels(filename: str, pixels: List[Dict[str, Any]]) -> str:
 
     script = """
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     app.transaction(function()
         local cel = app.activeCel
@@ -44,34 +36,38 @@ async def draw_pixels(filename: str, pixels: List[Dict[str, Any]]) -> str:
             app.activeFrame = spr.frames[1]
             cel = app.activeCel
             if not cel then
-                return "No active cel and couldn't create one"
+                print("ERROR:No active cel and couldn't create one") return
             end
         end
 
         local img = cel.image
+        local cox = cel.position.x
+        local coy = cel.position.y
     """
 
-    # Add pixel drawing commands
+    # Add pixel drawing commands. Coordinates are sprite-global; we
+    # offset into cel-local space because cel.image:putPixel uses
+    # cel-local coordinates.
     for pixel in pixels:
         x = pixel.get("x", 0)
         y = pixel.get("y", 0)
         rgb = _parse_hex_color(pixel.get("color", "#000000"))
         if rgb is None:
             return f"Invalid color value: {pixel.get('color')}"
-        r, g, b = rgb
+        r, g, b, a = rgb
 
         script += f"""
-        img:putPixel({x}, {y}, Color({r}, {g}, {b}, 255))
+        img:putPixel({x} - cox, {y} - coy, Color({r}, {g}, {b}, {a}))
         """
 
     script += """
     end)
 
     spr:saveAs(spr.filename)
-    return "Pixels drawn successfully"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
 
     if success:
         return f"Pixels drawn successfully in {filename}"
@@ -97,11 +93,11 @@ async def draw_line(filename: str, x1: int, y1: int, x2: int, y2: int, color: st
     rgb = _parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
-    r, g, b = rgb
+    r, g, b, a = rgb
 
     script = f"""
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     local function put_thick(img, x, y, color, size)
         local r = math.max(0, math.floor(size / 2))
@@ -138,19 +134,24 @@ async def draw_line(filename: str, x1: int, y1: int, x2: int, y2: int, color: st
             app.activeFrame = spr.frames[1]
             cel = app.activeCel
             if not cel then
-                return "No active cel and couldn't create one"
+                print("ERROR:No active cel and couldn't create one") return
             end
         end
         local img = cel.image
-        local color = Color({r}, {g}, {b}, 255)
-        draw_line(img, {x1}, {y1}, {x2}, {y2}, color, {thickness})
+        local cox = cel.position.x
+        local coy = cel.position.y
+        local color = Color({r}, {g}, {b}, {a})
+        -- Translate sprite-global args into cel-local space so the
+        -- inner Bresenham/putPixel helpers do not need to know about
+        -- cel.position.
+        draw_line(img, {x1} - cox, {y1} - coy, {x2} - cox, {y2} - coy, color, {thickness})
     end)
 
     spr:saveAs(spr.filename)
-    return "Line drawn successfully"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
 
     if success:
         return f"Line drawn successfully in {filename}"
@@ -165,22 +166,24 @@ async def draw_rectangle(filename: str, x: int, y: int, width: int, height: int,
         filename: Name of the Aseprite file to modify
         x: Top-left x coordinate
         y: Top-left y coordinate
-        width: Width of the rectangle
-        height: Height of the rectangle
+        width: Width of the rectangle in pixels (must be > 0)
+        height: Height of the rectangle in pixels (must be > 0)
         color: Hex color code (default: "#000000")
         fill: Whether to fill the rectangle (default: False)
     """
     if not os.path.exists(filename):
         return f"File {filename} not found"
+    if width <= 0 or height <= 0:
+        return "Width and height must be > 0"
 
     rgb = _parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
-    r, g, b = rgb
+    r, g, b, a = rgb
 
     script = f"""
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     app.transaction(function()
         local cel = app.activeCel
@@ -189,13 +192,15 @@ async def draw_rectangle(filename: str, x: int, y: int, width: int, height: int,
             app.activeFrame = spr.frames[1]
             cel = app.activeCel
             if not cel then
-                return "No active cel and couldn't create one"
+                print("ERROR:No active cel and couldn't create one") return
             end
         end
 
         local img = cel.image
-        local color = Color({r}, {g}, {b}, 255)
-        local x0, y0, w, h = {x}, {y}, {width}, {height}
+        local cox = cel.position.x
+        local coy = cel.position.y
+        local color = Color({r}, {g}, {b}, {a})
+        local x0, y0, w, h = {x} - cox, {y} - coy, {width}, {height}
         if {'true' if fill else 'false'} then
             for py = y0, y0 + h - 1 do
                 for px = x0, x0 + w - 1 do
@@ -215,10 +220,10 @@ async def draw_rectangle(filename: str, x: int, y: int, width: int, height: int,
     end)
 
     spr:saveAs(spr.filename)
-    return "Rectangle drawn successfully"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
 
     if success:
         return f"Rectangle drawn successfully in {filename}"
@@ -241,11 +246,11 @@ async def fill_area(filename: str, x: int, y: int, color: str = "#000000") -> st
     rgb = _parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
-    r, g, b = rgb
+    r, g, b, a = rgb
 
     script = f"""
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     app.transaction(function()
         local cel = app.activeCel
@@ -254,11 +259,11 @@ async def fill_area(filename: str, x: int, y: int, color: str = "#000000") -> st
             app.activeFrame = spr.frames[1]
             cel = app.activeCel
             if not cel then
-                return "No active cel and couldn't create one"
+                print("ERROR:No active cel and couldn't create one") return
             end
         end
 
-        local color = Color({r}, {g}, {b}, 255)
+        local color = Color({r}, {g}, {b}, {a})
         app.useTool({{
             tool="paint_bucket",
             color=color,
@@ -267,10 +272,10 @@ async def fill_area(filename: str, x: int, y: int, color: str = "#000000") -> st
     end)
 
     spr:saveAs(spr.filename)
-    return "Area filled successfully"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
 
     if success:
         return f"Area filled successfully in {filename}"
@@ -295,11 +300,11 @@ async def draw_circle(filename: str, center_x: int, center_y: int, radius: int, 
     rgb = _parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
-    r, g, b = rgb
+    r, g, b, a = rgb
 
     script = f"""
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     app.transaction(function()
         local cel = app.activeCel
@@ -308,11 +313,11 @@ async def draw_circle(filename: str, center_x: int, center_y: int, radius: int, 
             app.activeFrame = spr.frames[1]
             cel = app.activeCel
             if not cel then
-                return "No active cel and couldn't create one"
+                print("ERROR:No active cel and couldn't create one") return
             end
         end
 
-        local color = Color({r}, {g}, {b}, 255)
+        local color = Color({r}, {g}, {b}, {a})
         local tool = {'"ellipse"' if not fill else '"filled_ellipse"'}
         app.useTool({{
             tool=tool,
@@ -325,10 +330,10 @@ async def draw_circle(filename: str, center_x: int, center_y: int, radius: int, 
     end)
 
     spr:saveAs(spr.filename)
-    return "Circle drawn successfully"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
 
     if success:
         return f"Circle drawn successfully in {filename}"
@@ -359,16 +364,14 @@ async def draw_pixels_at(
     create_flag = "true" if create_if_missing else "false"
     script = f"""
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     local idx = {frame_index}
-    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+    if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
 
-    local target = nil
-    for _, layer in ipairs(spr.layers) do
-        if layer.name == "{safe_layer_name}" then target = layer break end
-    end
-    if not target then return "Layer not found" end
+    {FIND_LAYER}
+    local target = find_layer(spr, "{safe_layer_name}")
+    if not target then print("ERROR:Layer not found") return end
 
     app.transaction(function()
         app.activeLayer = target
@@ -380,6 +383,8 @@ async def draw_pixels_at(
         end
         if not cel then return end
         local img = cel.image
+        local cox = cel.position.x
+        local coy = cel.position.y
     """
     for pixel in pixels:
         x = pixel.get("x", 0)
@@ -387,19 +392,19 @@ async def draw_pixels_at(
         rgb = _parse_hex_color(pixel.get("color", "#000000"))
         if rgb is None:
             return f"Invalid color value: {pixel.get('color')}"
-        r, g, b = rgb
+        r, g, b, a = rgb
         script += f"""
-        img:putPixel({x}, {y}, Color({r}, {g}, {b}, 255))
+        img:putPixel({x} - cox, {y} - coy, Color({r}, {g}, {b}, {a}))
         """
 
     script += """
     end)
 
     spr:saveAs(spr.filename)
-    return "Pixels drawn"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
     if success:
         return f"Pixels drawn on '{layer_name}' frame {frame_index} in {filename}"
     return f"Failed to draw pixels: {output}"
@@ -417,20 +422,33 @@ async def draw_line_at(
     thickness: int = 1,
     create_if_missing: bool = True
 ) -> str:
-    """Draw a line on a specific layer/frame."""
+    """Draw a line on a specific layer/frame.
+
+    Args:
+        filename (str): The path to the Aseprite file.
+        layer_name (str): The name of the layer to draw on.
+        frame_index (int): The index of the frame to draw on.
+        x1 (int): The x coordinate of the first point of the line.
+        y1 (int): The y coordinate of the first point of the line.
+        x2 (int): The x coordinate of the second point of the line.
+        y2 (int): The y coordinate of the second point of the line.
+        color (str, optional): The color to draw the line with. Defaults to "#000000".
+        thickness (int, optional): The thickness of the line. Defaults to 1.
+        create_if_missing (bool, optional): Whether to create the layer if it doesn't exist. Defaults to True.
+    """
     if not os.path.exists(filename):
         return f"File {filename} not found"
 
     rgb = _parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
-    r, g, b = rgb
+    r, g, b, a = rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
 
     script = f"""
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     local function put_thick(img, x, y, color, size)
         local r = math.max(0, math.floor(size / 2))
@@ -461,13 +479,11 @@ async def draw_line_at(
     end
 
     local idx = {frame_index}
-    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+    if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
 
-    local target = nil
-    for _, layer in ipairs(spr.layers) do
-        if layer.name == "{safe_layer_name}" then target = layer break end
-    end
-    if not target then return "Layer not found" end
+    {FIND_LAYER}
+    local target = find_layer(spr, "{safe_layer_name}")
+    if not target then print("ERROR:Layer not found") return end
 
     app.transaction(function()
         app.activeLayer = target
@@ -479,15 +495,17 @@ async def draw_line_at(
         end
         if not cel then return end
         local img = cel.image
-        local color = Color({r}, {g}, {b}, 255)
-        draw_line(img, {x1}, {y1}, {x2}, {y2}, color, {thickness})
+        local cox = cel.position.x
+        local coy = cel.position.y
+        local color = Color({r}, {g}, {b}, {a})
+        draw_line(img, {x1} - cox, {y1} - coy, {x2} - cox, {y2} - coy, color, {thickness})
     end)
 
     spr:saveAs(spr.filename)
-    return "Line drawn"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
     if success:
         return f"Line drawn on '{layer_name}' frame {frame_index} in {filename}"
     return f"Failed to draw line: {output}"
@@ -505,29 +523,42 @@ async def draw_rectangle_at(
     fill: bool = False,
     create_if_missing: bool = True
 ) -> str:
-    """Draw a rectangle on a specific layer/frame."""
+    """Draw a rectangle on a specific layer/frame.
+
+    Args:
+        filename (str): The path to the Aseprite file.
+        layer_name (str): The name of the layer to draw on.
+        frame_index (int): The index of the frame to draw on.
+        x (int): The x coordinate of the top-left corner of the rectangle.
+        y (int): The y coordinate of the top-left corner of the rectangle.
+        width (int): The width of the rectangle.
+        height (int): The height of the rectangle.
+        color (str, optional): The color to draw the rectangle with. Defaults to "#000000".
+        fill (bool, optional): Whether to fill the rectangle. Defaults to False.
+        create_if_missing (bool, optional): Whether to create the layer if it doesn't exist. Defaults to True.
+    """
     if not os.path.exists(filename):
         return f"File {filename} not found"
+    if width <= 0 or height <= 0:
+        return "Width and height must be > 0"
 
     rgb = _parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
-    r, g, b = rgb
+    r, g, b, a = rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
 
     script = f"""
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     local idx = {frame_index}
-    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+    if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
 
-    local target = nil
-    for _, layer in ipairs(spr.layers) do
-        if layer.name == "{safe_layer_name}" then target = layer break end
-    end
-    if not target then return "Layer not found" end
+    {FIND_LAYER}
+    local target = find_layer(spr, "{safe_layer_name}")
+    if not target then print("ERROR:Layer not found") return end
 
     app.transaction(function()
         app.activeLayer = target
@@ -539,8 +570,10 @@ async def draw_rectangle_at(
         end
         if not cel then return end
         local img = cel.image
-        local color = Color({r}, {g}, {b}, 255)
-        local x0, y0, w, h = {x}, {y}, {width}, {height}
+        local cox = cel.position.x
+        local coy = cel.position.y
+        local color = Color({r}, {g}, {b}, {a})
+        local x0, y0, w, h = {x} - cox, {y} - coy, {width}, {height}
         if {'true' if fill else 'false'} then
             for py = y0, y0 + h - 1 do
                 for px = x0, x0 + w - 1 do
@@ -560,10 +593,10 @@ async def draw_rectangle_at(
     end)
 
     spr:saveAs(spr.filename)
-    return "Rectangle drawn"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
     if success:
         return f"Rectangle drawn on '{layer_name}' frame {frame_index} in {filename}"
     return f"Failed to draw rectangle: {output}"
@@ -580,29 +613,39 @@ async def draw_circle_at(
     fill: bool = False,
     create_if_missing: bool = True
 ) -> str:
-    """Draw a circle on a specific layer/frame."""
+    """Draw a circle on a specific layer/frame.
+
+    Args:
+        filename (str): The path to the Aseprite file.
+        layer_name (str): The name of the layer to draw on.
+        frame_index (int): The index of the frame to draw on.
+        center_x (int): The x coordinate of the center of the circle.
+        center_y (int): The y coordinate of the center of the circle.
+        radius (int): The radius of the circle.
+        color (str, optional): The color to draw the circle with. Defaults to "#000000".
+        fill (bool, optional): Whether to fill the circle. Defaults to False.
+        create_if_missing (bool, optional): Whether to create the layer if it doesn't exist. Defaults to True.
+    """
     if not os.path.exists(filename):
         return f"File {filename} not found"
 
     rgb = _parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
-    r, g, b = rgb
+    r, g, b, a = rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
 
     script = f"""
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     local idx = {frame_index}
-    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+    if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
 
-    local target = nil
-    for _, layer in ipairs(spr.layers) do
-        if layer.name == "{safe_layer_name}" then target = layer break end
-    end
-    if not target then return "Layer not found" end
+    {FIND_LAYER}
+    local target = find_layer(spr, "{safe_layer_name}")
+    if not target then print("ERROR:Layer not found") return end
 
     app.transaction(function()
         app.activeLayer = target
@@ -613,7 +656,7 @@ async def draw_circle_at(
             cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
         end
         if not cel then return end
-        local color = Color({r}, {g}, {b}, 255)
+        local color = Color({r}, {g}, {b}, {a})
         local tool = {'"ellipse"' if not fill else '"filled_ellipse"'}
         app.useTool({{
             tool=tool,
@@ -626,10 +669,10 @@ async def draw_circle_at(
     end)
 
     spr:saveAs(spr.filename)
-    return "Circle drawn"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
     if success:
         return f"Circle drawn on '{layer_name}' frame {frame_index} in {filename}"
     return f"Failed to draw circle: {output}"
@@ -644,29 +687,37 @@ async def fill_area_at(
     color: str = "#000000",
     create_if_missing: bool = True
 ) -> str:
-    """Fill an area on a specific layer/frame."""
+    """Fill an area on a specific layer/frame.
+
+    Args:
+        filename (str): The path to the Aseprite file.
+        layer_name (str): The name of the layer to draw on.
+        frame_index (int): The index of the frame to draw on.
+        x (int): The x coordinate of the point to start filling from.
+        y (int): The y coordinate of the point to start filling from.
+        color (str, optional): The color to fill the area with. Defaults to "#000000".
+        create_if_missing (bool, optional): Whether to create the layer if it doesn't exist. Defaults to True.
+    """
     if not os.path.exists(filename):
         return f"File {filename} not found"
 
     rgb = _parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
-    r, g, b = rgb
+    r, g, b, a = rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
 
     script = f"""
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     local idx = {frame_index}
-    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+    if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
 
-    local target = nil
-    for _, layer in ipairs(spr.layers) do
-        if layer.name == "{safe_layer_name}" then target = layer break end
-    end
-    if not target then return "Layer not found" end
+    {FIND_LAYER}
+    local target = find_layer(spr, "{safe_layer_name}")
+    if not target then print("ERROR:Layer not found") return end
 
     app.transaction(function()
         app.activeLayer = target
@@ -677,7 +728,7 @@ async def fill_area_at(
             cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
         end
         if not cel then return end
-        local color = Color({r}, {g}, {b}, 255)
+        local color = Color({r}, {g}, {b}, {a})
         app.useTool({{
             tool="paint_bucket",
             color=color,
@@ -686,10 +737,10 @@ async def fill_area_at(
     end)
 
     spr:saveAs(spr.filename)
-    return "Area filled"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
     if success:
         return f"Area filled on '{layer_name}' frame {frame_index} in {filename}"
     return f"Failed to fill area: {output}"
@@ -704,7 +755,17 @@ async def draw_polygon(
     fill: bool = False,
     create_if_missing: bool = True
 ) -> str:
-    """Draw a polygon on a specific layer/frame."""
+    """Draw a polygon on a specific layer/frame.
+
+    Args:
+        filename (str): The path to the Aseprite file.
+        layer_name (str): The name of the layer to draw on.
+        frame_index (int): The index of the frame to draw on.
+        points (List[Dict[str, int]]): The list of points to draw the polygon.
+        color (str, optional): The color to draw the polygon with. Defaults to "#000000".
+        fill (bool, optional): Whether to fill the polygon. Defaults to False.
+        create_if_missing (bool, optional): Whether to create the layer if it doesn't exist. Defaults to True.
+    """
     if not os.path.exists(filename):
         return f"File {filename} not found"
     if len(points) < 3:
@@ -713,25 +774,21 @@ async def draw_polygon(
     rgb = _parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
-    r, g, b = rgb
+    r, g, b, a = rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
     fill_flag = "true" if fill else "false"
     points_lua = ", ".join([f"{{x={p['x']}, y={p['y']}}}" for p in points])
 
     script = f"""
+    {NORMALIZE_CEL}
+    {PSET}
+    {FIND_LAYER}
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
-    local function put_thick(img, x, y, color, size)
-        local r = math.max(0, math.floor(size / 2))
-        for oy = -r, r do
-            for ox = -r, r do
-                img:putPixel(x + ox, y + oy, color)
-            end
-        end
-    end
-
+    -- Points are sprite-global; normalize_cel anchors the cel at (0,0)
+    -- canvas-sized, so no cel-offset math is needed and pset() bounds-guards.
     local function draw_line(img, x0, y0, x1, y1, color)
         local dx = math.abs(x1 - x0)
         local sx = x0 < x1 and 1 or -1
@@ -739,7 +796,7 @@ async def draw_polygon(
         local sy = y0 < y1 and 1 or -1
         local err = dx + dy
         while true do
-            img:putPixel(x0, y0, color)
+            pset(img, x0, y0, color)
             if x0 == x1 and y0 == y1 then break end
             local e2 = 2 * err
             if e2 >= dy then err = err + dy; x0 = x0 + sx end
@@ -772,7 +829,7 @@ async def draw_polygon(
                     local x_start = math.floor(nodes[k] + 0.5)
                     local x_end = math.floor(nodes[k + 1] + 0.5)
                     for x = x_start, x_end do
-                        img:putPixel(x, y, color)
+                        pset(img, x, y, color)
                     end
                 end
             end
@@ -780,25 +837,18 @@ async def draw_polygon(
     end
 
     local idx = {frame_index}
-    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+    if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
 
-    local target = nil
-    for _, layer in ipairs(spr.layers) do
-        if layer.name == "{safe_layer_name}" then target = layer break end
-    end
-    if not target then return "Layer not found" end
+    local target = find_layer(spr, "{safe_layer_name}")
+    if not target then print("ERROR:Layer not found") return end
 
     app.transaction(function()
         app.activeLayer = target
         app.activeFrame = spr.frames[idx]
-        local cel = target:cel(spr.frames[idx])
-        if not cel and {create_flag} then
-            local img = Image(spr.width, spr.height, spr.colorMode)
-            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
-        end
+        local cel = normalize_cel(spr, target, spr.frames[idx], {create_flag})
         if not cel then return end
         local img = cel.image
-        local color = Color({r}, {g}, {b}, 255)
+        local color = Color({r}, {g}, {b}, {a})
         local pts = {{ {points_lua} }}
         if {fill_flag} then
             fill_polygon(img, pts, color)
@@ -811,10 +861,10 @@ async def draw_polygon(
     end)
 
     spr:saveAs(spr.filename)
-    return "Polygon drawn"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
     if success:
         return f"Polygon drawn on '{layer_name}' frame {frame_index} in {filename}"
     return f"Failed to draw polygon: {output}"
@@ -829,7 +879,17 @@ async def draw_path(
     thickness: int = 1,
     create_if_missing: bool = True
 ) -> str:
-    """Draw a path using a polyline on a specific layer/frame."""
+    """Draw a path using a polyline on a specific layer/frame.
+
+    Args:
+        filename (str): The path to the Aseprite file.
+        layer_name (str): The name of the layer to draw on.
+        frame_index (int): The index of the frame to draw on.
+        points (List[Dict[str, int]]): The points to draw the path with.
+        color (str, optional): The color to draw the path with. Defaults to "#000000".
+        thickness (int, optional): The thickness of the path. Defaults to 1.
+        create_if_missing (bool, optional): Whether to create the layer if it doesn't exist. Defaults to True.
+    """
     if not os.path.exists(filename):
         return f"File {filename} not found"
     if len(points) < 2:
@@ -838,20 +898,23 @@ async def draw_path(
     rgb = _parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
-    r, g, b = rgb
+    r, g, b, a = rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
     points_lua = ", ".join([f"{{x={p['x']}, y={p['y']}}}" for p in points])
 
     script = f"""
+    {NORMALIZE_CEL}
+    {PSET}
+    {FIND_LAYER}
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     local function put_thick(img, x, y, color, size)
-        local r = math.max(0, math.floor(size / 2))
-        for oy = -r, r do
-            for ox = -r, r do
-                img:putPixel(x + ox, y + oy, color)
+        local rad = math.max(0, math.floor(size / 2))
+        for oy = -rad, rad do
+            for ox = -rad, rad do
+                pset(img, x + ox, y + oy, color)
             end
         end
     end
@@ -866,7 +929,7 @@ async def draw_path(
             if size > 1 then
                 put_thick(img, x0, y0, color, size)
             else
-                img:putPixel(x0, y0, color)
+                pset(img, x0, y0, color)
             end
             if x0 == x1 and y0 == y1 then break end
             local e2 = 2 * err
@@ -876,25 +939,18 @@ async def draw_path(
     end
 
     local idx = {frame_index}
-    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+    if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
 
-    local target = nil
-    for _, layer in ipairs(spr.layers) do
-        if layer.name == "{safe_layer_name}" then target = layer break end
-    end
-    if not target then return "Layer not found" end
+    local target = find_layer(spr, "{safe_layer_name}")
+    if not target then print("ERROR:Layer not found") return end
 
     app.transaction(function()
         app.activeLayer = target
         app.activeFrame = spr.frames[idx]
-        local cel = target:cel(spr.frames[idx])
-        if not cel and {create_flag} then
-            local img = Image(spr.width, spr.height, spr.colorMode)
-            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
-        end
+        local cel = normalize_cel(spr, target, spr.frames[idx], {create_flag})
         if not cel then return end
         local img = cel.image
-        local color = Color({r}, {g}, {b}, 255)
+        local color = Color({r}, {g}, {b}, {a})
         local pts = {{ {points_lua} }}
         for i = 1, #pts - 1 do
             draw_line(img, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, color, {thickness})
@@ -902,10 +958,10 @@ async def draw_path(
     end)
 
     spr:saveAs(spr.filename)
-    return "Path drawn"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
     if success:
         return f"Path drawn on '{layer_name}' frame {frame_index} in {filename}"
     return f"Failed to draw path: {output}"
@@ -924,7 +980,21 @@ async def apply_gradient_rect(
     horizontal: bool = True,
     create_if_missing: bool = True
 ) -> str:
-    """Apply a linear gradient fill to a rectangle."""
+    """Apply a linear gradient fill to a rectangle.
+
+    Args:
+        filename (str): The path to the Aseprite file.
+        layer_name (str): The name of the layer to draw on.
+        frame_index (int): The index of the frame to draw on.
+        x (int): The x coordinate of the rectangle to draw on.
+        y (int): The y coordinate of the rectangle to draw on.
+        width (int): The width of the rectangle to draw on.
+        height (int): The height of the rectangle to draw on.
+        color_start (str): The start color of the gradient.
+        color_end (str): The end color of the gradient.
+        horizontal (bool, optional): Whether to draw the gradient horizontally. Defaults to True.
+        create_if_missing (bool, optional): Whether to create the layer if it doesn't exist. Defaults to True.
+    """
     if not os.path.exists(filename):
         return f"File {filename} not found"
     if width <= 0 or height <= 0:
@@ -937,33 +1007,29 @@ async def apply_gradient_rect(
     if end_rgb is None:
         return f"Invalid color_end value: {color_end}"
 
-    sr, sg, sb = start_rgb
-    er, eg, eb = end_rgb
+    sr, sg, sb, sa = start_rgb
+    er, eg, eb, ea = end_rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
     horiz_flag = "true" if horizontal else "false"
 
     script = f"""
+    {NORMALIZE_CEL}
+    {PSET}
+    {FIND_LAYER}
     local spr = app.activeSprite
-    if not spr then return "No active sprite" end
+    if not spr then print("ERROR:No active sprite") return end
 
     local idx = {frame_index}
-    if idx < 1 or idx > #spr.frames then return "Frame index out of range" end
+    if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
 
-    local target = nil
-    for _, layer in ipairs(spr.layers) do
-        if layer.name == "{safe_layer_name}" then target = layer break end
-    end
-    if not target then return "Layer not found" end
+    local target = find_layer(spr, "{safe_layer_name}")
+    if not target then print("ERROR:Layer not found") return end
 
     app.transaction(function()
         app.activeLayer = target
         app.activeFrame = spr.frames[idx]
-        local cel = target:cel(spr.frames[idx])
-        if not cel and {create_flag} then
-            local img = Image(spr.width, spr.height, spr.colorMode)
-            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
-        end
+        local cel = normalize_cel(spr, target, spr.frames[idx], {create_flag})
         if not cel then return end
         local img = cel.image
         local w = {width}
@@ -979,16 +1045,17 @@ async def apply_gradient_rect(
                 local r = math.floor({sr} + ({er} - {sr}) * t + 0.5)
                 local g = math.floor({sg} + ({eg} - {sg}) * t + 0.5)
                 local b = math.floor({sb} + ({eb} - {sb}) * t + 0.5)
-                img:putPixel({x} + ix, {y} + iy, Color(r, g, b, 255))
+                local a = math.floor({sa} + ({ea} - {sa}) * t + 0.5)
+                pset(img, {x} + ix, {y} + iy, Color(r, g, b, a))
             end
         end
     end)
 
     spr:saveAs(spr.filename)
-    return "Gradient applied"
+    print("OK")
     """
 
-    success, output = AsepriteCommand.execute_lua_script(script, filename)
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
     if success:
         return f"Gradient applied on '{layer_name}' frame {frame_index} in {filename}"
     return f"Failed to apply gradient: {output}"
@@ -1025,18 +1092,18 @@ async def flood_fill_at(
     rgb = _parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
-    r, g, b = rgb
+    r, g, b, a = rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
 
     if tolerance == 0 and contiguous:
-        filter_op = f"img:floodFill({x}, {y}, Color({r}, {g}, {b}, 255))"
+        filter_op = f"img:floodFill({x}, {y}, Color({r}, {g}, {b}, {a}))"
     else:
         cont = "true" if contiguous else "false"
         filter_op = f"""
         app.useTool({{
             tool="paint_bucket",
-            color=Color({r}, {g}, {b}, 255),
+            color=Color({r}, {g}, {b}, {a}),
             points={{Point({x}, {y})}},
             tolerance={tolerance},
             contiguous={cont}
@@ -1107,8 +1174,8 @@ async def replace_color_at(
     to_rgb = _parse_hex_color(to_color)
     if to_rgb is None:
         return f"Invalid to_color value: {to_color}"
-    fr, fg, fb = from_rgb
-    tr, tg, tb = to_rgb
+    fr, fg, fb, fa = from_rgb
+    tr, tg, tb, ta = to_rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
 
@@ -1135,7 +1202,7 @@ async def replace_color_at(
         end
         if not cel then return end
         local img = cel.image
-        img:replaceColor(Color({fr}, {fg}, {fb}, 255), Color({tr}, {tg}, {tb}, 255))
+        img:replaceColor(Color({fr}, {fg}, {fb}, {fa}), Color({tr}, {tg}, {tb}, {ta}))
     end)
 
     spr:saveAs(spr.filename)
@@ -1230,7 +1297,7 @@ async def apply_noise_at(
     rgb = _parse_hex_color(color)
     if rgb is None:
         return f"Invalid color value: {color}"
-    r, g, b = rgb
+    r, g, b, a = rgb
     safe_layer_name = lua_escape(layer_name)
     create_flag = "true" if create_if_missing else "false"
 
@@ -1257,7 +1324,7 @@ async def apply_noise_at(
         end
         if not cel then return end
         local img = cel.image
-        img:noise({amount}, Color({r}, {g}, {b}, 255))
+        img:noise({amount}, Color({r}, {g}, {b}, {a}))
     end)
 
     spr:saveAs(spr.filename)
@@ -1569,3 +1636,84 @@ async def adjust_hsl_at(
     if success:
         return f"HSL adjusted on '{layer_name}' frame {frame_index} in {filename}"
     return f"Failed to adjust HSL: {output}"
+
+
+@mcp.tool()
+async def draw_ellipse_at(
+    filename: str,
+    layer_name: str,
+    frame_index: int,
+    center_x: int,
+    center_y: int,
+    radius_x: int,
+    radius_y: int,
+    color: str = "#000000",
+    fill: bool = False,
+    create_if_missing: bool = True
+) -> str:
+    """Draw an ellipse on a specific layer/frame.
+
+    Args:
+        filename: Aseprite file to modify
+        layer_name: Layer to draw on
+        frame_index: Frame index starting at 1
+        center_x: Ellipse center x
+        center_y: Ellipse center y
+        radius_x: Horizontal radius in pixels
+        radius_y: Vertical radius in pixels
+        color: Hex color code (default "#000000")
+        fill: Fill the ellipse instead of outlining it
+        create_if_missing: Create the cel if it does not exist
+    """
+    if not os.path.exists(filename):
+        return f"File {filename} not found"
+    if radius_x <= 0 or radius_y <= 0:
+        return "radius_x and radius_y must be > 0"
+
+    rgb = _parse_hex_color(color)
+    if rgb is None:
+        return f"Invalid color value: {color}"
+    r, g, b, a = rgb
+    safe_layer_name = lua_escape(layer_name)
+    create_flag = "true" if create_if_missing else "false"
+
+    script = f"""
+    local spr = app.activeSprite
+    if not spr then print("ERROR:No active sprite") return end
+
+    local idx = {frame_index}
+    if idx < 1 or idx > #spr.frames then print("ERROR:Frame index out of range") return end
+
+    {FIND_LAYER}
+    local target = find_layer(spr, "{safe_layer_name}")
+    if not target then print("ERROR:Layer not found") return end
+
+    app.transaction(function()
+        app.activeLayer = target
+        app.activeFrame = spr.frames[idx]
+        local cel = target:cel(spr.frames[idx])
+        if not cel and {create_flag} then
+            local img = Image(spr.width, spr.height, spr.colorMode)
+            cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
+        end
+        if not cel then return end
+        local color = Color({r}, {g}, {b}, {a})
+        local tool = {'"filled_ellipse"' if fill else '"ellipse"'}
+        app.useTool({{
+            tool=tool,
+            color=color,
+            points={{
+                Point({center_x - radius_x}, {center_y - radius_y}),
+                Point({center_x + radius_x}, {center_y + radius_y})
+            }}
+        }})
+    end)
+
+    spr:saveAs(spr.filename)
+    print("OK")
+    """
+
+    success, output = AsepriteCommand.execute_lua_script_checked(script, filename)
+    if success:
+        return f"Ellipse drawn on '{layer_name}' frame {frame_index} in {filename}"
+    return f"Failed to draw ellipse: {output}"

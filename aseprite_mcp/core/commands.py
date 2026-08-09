@@ -95,3 +95,23 @@ class AsepriteCommand:
         finally:
             # Clean up the temporary script file
             os.remove(script_path)
+
+    @staticmethod
+    def execute_lua_script_checked(script_content, filename=None):
+        """Execute a Lua script and surface in-script errors.
+
+        Scripts using this helper signal failure by printing a line
+        starting with "ERROR:" (batch-mode scripts cannot affect the
+        process exit code from Lua).
+
+        Returns:
+            tuple: (success, output) where output is the error message
+            when an ERROR: line was printed, or the raw stdout otherwise.
+        """
+        success, output = AsepriteCommand.execute_lua_script(script_content, filename)
+        if not success:
+            return False, output
+        for line in output.splitlines():
+            if line.startswith("ERROR:"):
+                return False, line[len("ERROR:"):]
+        return True, output

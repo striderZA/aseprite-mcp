@@ -6,9 +6,6 @@ from aseprite_mcp.tools.canvas import (
     set_frame,
     set_frame_duration,
     set_layer,
-    delete_layer,
-    set_layer_blend_mode,
-    reorder_layer,
     flatten_layers,
     merge_down_layer,
     set_layer_label_color,
@@ -34,15 +31,6 @@ class TestCanvasImports:
 
     def test_set_layer_imported(self):
         assert callable(set_layer)
-
-    def test_delete_layer_imported(self):
-        assert callable(delete_layer)
-
-    def test_set_layer_blend_mode_imported(self):
-        assert callable(set_layer_blend_mode)
-
-    def test_reorder_layer_imported(self):
-        assert callable(reorder_layer)
 
     def test_flatten_layers_imported(self):
         assert callable(flatten_layers)
