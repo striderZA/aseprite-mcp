@@ -15,7 +15,8 @@ def _pid_is_running(pid: int) -> bool:
                 ["tasklist", "/FI", f"PID eq {pid}"],
                 check=False,
                 capture_output=True,
-                text=True
+                text=True,
+                errors="replace"
             )
             return str(pid) in result.stdout
         os.kill(pid, 0)
