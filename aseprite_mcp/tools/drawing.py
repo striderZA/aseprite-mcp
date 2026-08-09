@@ -193,13 +193,25 @@ async def draw_rectangle(filename: str, x: int, y: int, width: int, height: int,
             end
         end
 
+        local img = cel.image
         local color = Color({r}, {g}, {b}, 255)
-        local tool = {'"rectangle"' if not fill else '"filled_rectangle"'}
-        app.useTool({{
-            tool=tool,
-            color=color,
-            points={{Point({x}, {y}), Point({x + width}, {y + height})}}
-        }})
+        local x0, y0, w, h = {x}, {y}, {width}, {height}
+        if {'true' if fill else 'false'} then
+            for py = y0, y0 + h - 1 do
+                for px = x0, x0 + w - 1 do
+                    img:putPixel(px, py, color)
+                end
+            end
+        else
+            for px = x0, x0 + w - 1 do
+                img:putPixel(px, y0, color)
+                img:putPixel(px, y0 + h - 1, color)
+            end
+            for py = y0, y0 + h - 1 do
+                img:putPixel(x0, py, color)
+                img:putPixel(x0 + w - 1, py, color)
+            end
+        end
     end)
 
     spr:saveAs(spr.filename)
@@ -526,13 +538,25 @@ async def draw_rectangle_at(
             cel = spr:newCel(target, spr.frames[idx], img, Point(0, 0))
         end
         if not cel then return end
+        local img = cel.image
         local color = Color({r}, {g}, {b}, 255)
-        local tool = {'"rectangle"' if not fill else '"filled_rectangle"'}
-        app.useTool({{
-            tool=tool,
-            color=color,
-            points={{Point({x}, {y}), Point({x + width}, {y + height})}}
-        }})
+        local x0, y0, w, h = {x}, {y}, {width}, {height}
+        if {'true' if fill else 'false'} then
+            for py = y0, y0 + h - 1 do
+                for px = x0, x0 + w - 1 do
+                    img:putPixel(px, py, color)
+                end
+            end
+        else
+            for px = x0, x0 + w - 1 do
+                img:putPixel(px, y0, color)
+                img:putPixel(px, y0 + h - 1, color)
+            end
+            for py = y0, y0 + h - 1 do
+                img:putPixel(x0, py, color)
+                img:putPixel(x0 + w - 1, py, color)
+            end
+        end
     end)
 
     spr:saveAs(spr.filename)
